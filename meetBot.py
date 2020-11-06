@@ -123,7 +123,7 @@ class Bot:
                 self.clickHiddenBTN(a[1])
             else:
                 raise NotImplementedError(f"No functionallity supported for action {a[0]}")
-            
+            # the response is not been appended!
             sleep(delay if not randomize else abs(gauss(delay/2, delay/2)))
         return tuple(data_collected)
     
