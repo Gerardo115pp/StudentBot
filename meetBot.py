@@ -1,8 +1,8 @@
 from enum import Enum
-import json
 from random import gauss
 from time import sleep
-from typing import final
+from typing import ItemsView, final
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.webdriver import WebDriver
 from selenium.webdriver.chrome.options import Options
@@ -10,10 +10,14 @@ from random_user_agent.user_agent import UserAgent
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from threading import Thread 
+from threading import Event, Thread 
 from BotSelectors import MeetSelectors
+import json
 import os
 import re
+
+SCHEDULE_JSON = "schedule.json"
+USER_DATA_JSON = "user_data.json"
 
 class BotActions(Enum):
     CLICK = 0
@@ -21,16 +25,86 @@ class BotActions(Enum):
     SEND_KEYS = 2
     
 
+class ScheduleHandler:
+    
+    def __init__(self, user,  schedule_file: str=SCHEDULE_JSON):
+        assert os.path.exists(SCHEDULE_JSON), f"schedule"
+        self.schedule = self.__loadScheduleFile(schedule_file)
+        self.student_bot = StudentBot(user)
+        
+    def __loadScheduleFile(self, schedule_file: str) -> dict:
+        with open(schedule_file, 'r')as f:
+            return json.load(f)
+    
+    def parseSchedule(self, event_string: str) -> tuple:
+        """
+        parses a event string with format wd1,wd2,...,wdn:hh:mm
+        
+        wd is short for weekday, it can be a value between 0 and 6 where 0 means MONDAY and 6 means SUNDAY
+        hh: is the hour where the event starts
+        minute: is the minute of hh where the event starts
 
-class Bot:
+        Parameters
+        ----------
+        event_string : str
+            a string decribing the time where the event most be executed    
+
+        Returns
+        -------
+        tuple
+            ((wdn), hh, mm)
+        """
+        event_time = event_string.split(":")
+        assert len(event_time) == 3, f"recived an event string '{event_string}' which is invalid"
+        event_time[0] = tuple(map(lambda x: int(x), event_time[0].split(",")))
+        event_time[1], event_time[2] = int(event_time[1]), int(event_time[2])
+        return tuple(event_time)
+    
+    def isEventStarted(self, current_time: datetime, event_data: tuple, event_string: str) -> bool:
+        return current_time.weekday() in event_data[0] and current_time.hour == event_data[1] and (current_time.minute >= event_data[2] and abs(event_data[2] - current_time.minute) < self.schedule[event_string]['stay'])
+    
+    @final    
+    def awaitEvent(self,multiple=False):
+        """
+        awaits for an event to start and logs into the corresponding videoconference
+
+        Parameters
+        ----------
+        multiple : bool, optional
+            [description], by default False
+        """
+        while True:
+            current_time = datetime.now()
+            for scheduled_event in self.schedule.keys():
+                parsed_event = self.parseSchedule(scheduled_event) # tuple returned ((wd1,..,wdn),hh,mm)
+                if self.isEventStarted(current_time, parsed_event ,scheduled_event):
+                    print(f"Event {scheduled_event} started!")
+                    self.student_bot.joinMeet(self.schedule[scheduled_event]['class_name'])
+                    print(f"staying in class {self.schedule[scheduled_event]['class_name']} for {self.schedule[scheduled_event]['stay']} minutes")
+                    sleep(self.schedule[scheduled_event]['stay'] * 60)
+                    if multiple:
+                        return
+                    
+            sleep(60)
+                
+                
+
+class StudentBot:
     user_agent = 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.7) Gecko/2009021910 Firefox/3.0.7'
 
-    def __init__(self, user: str) -> None:
-        self.user_agent_rotator = user_agent = UserAgent(software_names="chrome", operating_system="linux", limit=100)
+    
+    
+    def __init__(self, user: str, user_file: str=USER_DATA_JSON) -> None:
+        self.user_file = user_file
+        self.user_agent_rotator = UserAgent(software_names="chrome", operating_system="linux", limit=100)
         self.browser_options = Options()
         self.driver = self.__setBotOptions(user)
         self.user_name = user
         self.operational_data = self.__getUserdata()
+        self.__on_class = False
+    
+    def __del__(self):
+        self.driver.close()
     
     def __setBotOptions(self, user) -> WebDriver:
         self.browser_options.add_argument(f"user_agent={self.user_agent_rotator.get_random_user_agent()}")
@@ -47,9 +121,14 @@ class Bot:
         return webdriver.Chrome(os.path.join(os.getcwd(), "chromedriver.exe"), chrome_options= self.browser_options)        
     
     def __getUserdata(self):
-        assert os.path.exists("./user_data.json"), f"the file '{os.path.join(os.getcwd(), 'user_data.json')}' doesnt exists!"
-        with open("./user_data.json","r") as f:
+        assert os.path.exists(self.user_file), f"the file '{os.path.join(os.getcwd(), self.user_file)}' doesnt exists!"
+        with open(self.user_file,"r") as f:
             return json.load(f)
+
+    @property
+    def OnClass(self) -> bool:
+        return self.__on_class
+
 
     def clickHiddenBTN(self, selector: str) -> bool:
         self.driver.execute_script("return document.querySelector(arguments[0]).click();", selector)
@@ -138,6 +217,16 @@ class Bot:
             (BotActions.SEND_KEYS, MeetSelectors.CODE_INPUT, self.getClassCode(meet_class) ),
             (BotActions.CLICK, MeetSelectors.CLASS_CONTINUE_BTN),
             (BotActions.CLICK_HIDDEN, MeetSelectors.CLOSE_CAMMIC_ALERT, 6),
-            (BotActions.CLICK_HIDDEN, MeetSelectors.JOIN_BTN, 3)
+            (BotActions.CLICK_HIDDEN, MeetSelectors.JOIN_BTN, 3),
+            (BotActions.CLICK_HIDDEN, MeetSelectors.CLOSE_INVITE_DIALOG, 5)
         ), 1)
             
+    @final
+    def logoutClass(self):
+        pass
+    
+if __name__ == "__main__":
+    secretary = ScheduleHandler("lalo")
+    secretary.awaitEvent()
+    del secretary.student_bot
+    exit(0)
