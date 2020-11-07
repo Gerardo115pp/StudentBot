@@ -6,3 +6,4 @@ class MeetSelectors:
     CLOSE_CAMMIC_ALERT = "#yDmH0d > div.llhEMd.iWO5td > div > div.g3VIld.vdySc.Up8vH.J9Nfi.iWO5td > div.XfpsVe.J9fJmf > div > span > span"
     JOIN_BTN = "#yDmH0d > c-wiz > div > div > div:nth-child(6) > div.crqnQb > div > div > div.vgJExf > div > div.KieQAe > div.d7iDfe.NONs6c > div > div.Sla0Yd > div > div.XCoPyb > div.uArJ5e.UQuaGc.Y5sE8d.uyXBBb.xKiqt > span"
     CLOSE_INVITE_DIALOG = "#yDmH0d > div.llhEMd.iWO5td > div > div.g3VIld.QuP9wb.Up8vH.hFEqNb.J9Nfi.iWO5td > div.R6Lfte.tOrNgd.qRUolc > div.VY7JQd > div"
+    CLOSE_CALL = "#ow3 > div.T4LgNb > div > div:nth-child(6) > div.crqnQb > div.rG0ybd.LCXT6 > div.q2u11 > div.s1GInc.zCbbgf > div"

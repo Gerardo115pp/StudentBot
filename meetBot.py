@@ -1,8 +1,8 @@
 from enum import Enum
 from random import gauss
-from time import sleep
-from typing import ItemsView, final
-from datetime import datetime
+from time import sleep, time
+from typing import  final
+from datetime import datetime, timedelta
 from selenium import webdriver
 from selenium.webdriver.chrome.webdriver import WebDriver
 from selenium.webdriver.chrome.options import Options
@@ -10,8 +10,8 @@ from random_user_agent.user_agent import UserAgent
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from threading import Event, Thread 
 from BotSelectors import MeetSelectors
+import numpy as np
 import json
 import os
 import re
@@ -23,14 +23,18 @@ class BotActions(Enum):
     CLICK = 0
     CLICK_HIDDEN = 1
     SEND_KEYS = 2
+    MOVE_TO = 3
     
 
 class ScheduleHandler:
+    
+    time_matrix = np.array([3600, 60, 1])
     
     def __init__(self, user,  schedule_file: str=SCHEDULE_JSON):
         assert os.path.exists(SCHEDULE_JSON), f"schedule"
         self.schedule = self.__loadScheduleFile(schedule_file)
         self.student_bot = StudentBot(user)
+        self.__is_shutdown_set = False
         
     def __loadScheduleFile(self, schedule_file: str) -> dict:
         with open(schedule_file, 'r')as f:
@@ -63,6 +67,42 @@ class ScheduleHandler:
     def isEventStarted(self, current_time: datetime, event_data: tuple, event_string: str) -> bool:
         return current_time.weekday() in event_data[0] and current_time.hour == event_data[1] and (current_time.minute >= event_data[2] and abs(event_data[2] - current_time.minute) < self.schedule[event_string]['stay'])
     
+    def parse24Hstring(self, time24h: str) -> datetime:
+        assert re.match(r"^\d\d:\d\d$", time24h)
+        time24h = tuple(map(lambda x: int(x), time24h.split(':')))
+        current_time = datetime.now()
+
+        parsed_time = datetime(current_time.year, current_time.month, current_time.day, time24h[0], time24h[1])
+        if parsed_time < current_time:
+            parsed_time += timedelta(days=1)
+        
+        return parsed_time  
+    
+    def shutdownAt(self, shutdown_time: str):
+        """
+        shutsdown the computer at a defined hour
+
+        Parameters
+        ----------
+        shutdown_time : str
+            a string representing the shutdown hour in 24h format 'hh:mm'
+    
+        """
+        shutdown_time = self.parse24Hstring(shutdown_time)
+        seconds = int((shutdown_time - datetime.now()).total_seconds())
+        self.__setShutdown(seconds)
+    
+    def __abortShutdown(self):
+        self.__is_shutdown_set = False
+        os.system("shutdown -a")
+
+    def __setShutdown(self, seconds: int):
+        if self.__is_shutdown_set:
+            self.__abortShutdown()
+        
+        self.__is_shutdown_set = True
+        os.system(f"shutdown -s -f -t {seconds}")
+    
     @final    
     def awaitEvent(self,multiple=False):
         """
@@ -82,7 +122,9 @@ class ScheduleHandler:
                     self.student_bot.joinMeet(self.schedule[scheduled_event]['class_name'])
                     print(f"staying in class {self.schedule[scheduled_event]['class_name']} for {self.schedule[scheduled_event]['stay']} minutes")
                     sleep(self.schedule[scheduled_event]['stay'] * 60)
-                    if multiple:
+                    print("getting out of class")
+                    self.student_bot.logoutClass()
+                    if not multiple:
                         return
                     
             sleep(60)
@@ -92,7 +134,9 @@ class ScheduleHandler:
 class StudentBot:
     user_agent = 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.7) Gecko/2009021910 Firefox/3.0.7'
 
-    
+    bot_regexs = {
+        "meetcall": re.compile(r"^https?://meet\.google\.com/([a-z]{2,}-([a-z]{2,}-?)+)\??([a-z_]+=[\da-z]+)*$")
+    }
     
     def __init__(self, user: str, user_file: str=USER_DATA_JSON) -> None:
         self.user_file = user_file
@@ -186,7 +230,6 @@ class StudentBot:
                 if (web_element := self.querySelector(a[1])):
                     response = True
                     web_element.click()
-                data_collected.append(response)
             elif a[0] == BotActions.SEND_KEYS:
                 assert len(a) >= 3, f"not enought arguments for typing actions, recevied '{a}' as arguments"
                 if (web_element := self.querySelector(a[1])):
@@ -200,10 +243,15 @@ class StudentBot:
                     wait = WebDriverWait(self.driver, a[2])
                     wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, a[1])))
                 self.clickHiddenBTN(a[1])
+            elif a[0] == BotActions.MOVE_TO:
+                assert len(a) == 2, f"Move action requires A url as second parameter, got '{a}'"
+                response = True
+                self.driver.get(a[1])
             else:
                 raise NotImplementedError(f"No functionallity supported for action {a[0]}")
-            # the response is not been appended!
+            data_collected.append(response)
             sleep(delay if not randomize else abs(gauss(delay/2, delay/2)))
+        assert len(actions) == len(data_collected)
         return tuple(data_collected)
     
     @final
@@ -220,13 +268,22 @@ class StudentBot:
             (BotActions.CLICK_HIDDEN, MeetSelectors.JOIN_BTN, 3),
             (BotActions.CLICK_HIDDEN, MeetSelectors.CLOSE_INVITE_DIALOG, 5)
         ), 1)
-            
+        
+        self.__on_class = True if self.bot_regexs['meetcall'].match(self.driver.current_url) else False
+                
     @final
     def logoutClass(self):
-        pass
+        if self.OnClass:
+            response = self.performActions((
+                (BotActions.CLICK_HIDDEN, MeetSelectors.CLOSE_CALL, 3),
+                (BotActions.MOVE_TO, "https://google.com/")
+            ),2)
+            self.__on_class = all(response)
+    
+    
     
 if __name__ == "__main__":
     secretary = ScheduleHandler("lalo")
-    secretary.awaitEvent()
-    del secretary.student_bot
+    secretary.shutdownAt("01:30")
+    # del secretary.student_bot
     exit(0)
