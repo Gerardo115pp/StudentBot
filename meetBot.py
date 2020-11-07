@@ -10,6 +10,7 @@ from random_user_agent.user_agent import UserAgent
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from threading import Thread
 from BotSelectors import MeetSelectors
 import numpy as np
 import json
@@ -115,21 +116,33 @@ class ScheduleHandler:
         """
         while True:
             current_time = datetime.now()
+            monitoring_thread = Thread(target=self.student_bot.startMonitorClass)
             for scheduled_event in self.schedule.keys():
                 parsed_event = self.parseSchedule(scheduled_event) # tuple returned ((wd1,..,wdn),hh,mm)
                 if self.isEventStarted(current_time, parsed_event ,scheduled_event):
                     print(f"Event {scheduled_event} started!")
                     self.student_bot.joinMeet(self.schedule[scheduled_event]['class_name'])
                     print(f"staying in class {self.schedule[scheduled_event]['class_name']} for {self.schedule[scheduled_event]['stay']} minutes")
-                    sleep(self.schedule[scheduled_event]['stay'] * 60)
+                    
+                    monitoring_thread.start()
+                    
+                    minutes_elapsed = 0
+                    while self.schedule[scheduled_event]['stay'] != minutes_elapsed and self.student_bot.OnClass:
+                        minutes_elapsed += 1
+                        sleep(60)
+                        
                     print("getting out of class")
                     self.student_bot.logoutClass()
+                    monitoring_thread.join(30)
                     if not multiple:
                         return
                     
             sleep(60)
                 
                 
+
+class StudentBotException(Exception):
+    pass
 
 class StudentBot:
     user_agent = 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.7) Gecko/2009021910 Firefox/3.0.7'
@@ -146,6 +159,7 @@ class StudentBot:
         self.user_name = user
         self.operational_data = self.__getUserdata()
         self.__on_class = False
+        self.current_class = "N/A"
     
     def __del__(self):
         self.driver.close()
@@ -202,7 +216,7 @@ class StudentBot:
         """
         return self.operational_data[self.user_name][field]
 
-    def performActions(self, actions: tuple, delay: float=0.5, randomize: bool=False) -> tuple:
+    def performActions(self, actions: tuple, delay: float=0.5, randomize: bool=False, panic: bool=False) -> tuple:
         """
         each action should be a tuple in which the first element will be the name of the action
 
@@ -249,10 +263,25 @@ class StudentBot:
                 self.driver.get(a[1])
             else:
                 raise NotImplementedError(f"No functionallity supported for action {a[0]}")
+            
+            if not response and panic:
+                raise StudentBotException(f"Action '{a[0]}' couldnt be executed with parameters '{a[1:]}'")
             data_collected.append(response)
             sleep(delay if not randomize else abs(gauss(delay/2, delay/2)))
         assert len(actions) == len(data_collected)
         return tuple(data_collected)
+    
+    def getElementContent(self, selector: str):
+        js_command = """
+        let a = document.querySelector(arguments[0]);
+        let return_value = "-1";
+        if(a != undefined)
+        {
+            return_value = a.innerText;
+        }
+        return return_value;
+        """
+        return self.driver.execute_script(js_command,selector)
     
     @final
     def joinMeet(self, meet_class: str) -> None:
@@ -265,25 +294,76 @@ class StudentBot:
             (BotActions.SEND_KEYS, MeetSelectors.CODE_INPUT, self.getClassCode(meet_class) ),
             (BotActions.CLICK, MeetSelectors.CLASS_CONTINUE_BTN),
             (BotActions.CLICK_HIDDEN, MeetSelectors.CLOSE_CAMMIC_ALERT, 6),
-            (BotActions.CLICK_HIDDEN, MeetSelectors.JOIN_BTN, 3),
-            (BotActions.CLICK_HIDDEN, MeetSelectors.CLOSE_INVITE_DIALOG, 5)
-        ), 1)
+            (BotActions.CLICK_HIDDEN, MeetSelectors.JOIN_BTN, 3)
+        ), 1, panic=True)
         
-        self.__on_class = True if self.bot_regexs['meetcall'].match(self.driver.current_url) else False
-                
+        if (self.getElementContent(MeetSelectors.PEOPLE_COUNT) == "1"):
+            # closes the invite dialog in case we are the first to arrive to the call
+            self.performActions(tuple([(BotActions.CLICK_HIDDEN, MeetSelectors.CLOSE_INVITE_DIALOG, 5)]),0.1)
+            
+        self.__on_class = True if StudentBot.bot_regexs['meetcall'].match(self.driver.current_url) else False
+        self.current_class = meet_class
+        
     @final
     def logoutClass(self):
         if self.OnClass:
-            response = self.performActions((
-                (BotActions.CLICK_HIDDEN, MeetSelectors.CLOSE_CALL, 3),
-                (BotActions.MOVE_TO, "https://google.com/")
-            ),2)
-            self.__on_class = all(response)
+            response = self.performActions(tuple([(BotActions.MOVE_TO, "https://google.com/")]),2)
+            self.__on_class = False
     
+    def getAllComments(self) -> list:
+        js_command = """
+        let comments = document.querySelectorAll(arguments[0]),
+            text_comments = [];
+        
+        comments.forEach(c => text_comments.push(c.innerText));
+        return text_comments;
+        """
+        return self.driver.execute_script(js_command, MeetSelectors.COMMENTS_CLASS)
     
+    def saveComments(self, comments: list):
+        serialized_comments = ""
+        for h,c in enumerate(comments):
+            serialized_comments += f"{c}\n{'='*15}\n"
+        
+        assert os.path.exists(self.user_name)
+        
+        saving_path = self.user_name
+        for step in [ "clases", self.current_class]:
+            saving_path = os.path.join(saving_path, step)
+            if not os.path.exists(saving_path):
+                os.mkdir(saving_path)
+        
+        with open(os.path.join(saving_path, f"{self.current_class}-{datetime.now().strftime('%d-%m')}.txt"), "w",encoding="utf-8") as f:
+            f.write(serialized_comments)
+            
+        self.current_class = "N/A"
+
+        
+    def startMonitorClass(self):
+        highest_people_count = 1
+        comments = None
+        while self.OnClass:
+            current_people_count = self.getElementContent(MeetSelectors.PEOPLE_COUNT)
+            if current_people_count == "-1":
+                continue
+            assert current_people_count.isdigit()
+            current_people_count = int(current_people_count)
+            if current_people_count > highest_people_count:
+                highest_people_count = current_people_count
+                
+            elif current_people_count <= (highest_people_count * 0.5):
+                print("MORE THEN 50% OF THE PEOPLE LEFT. LOGGING OUT")
+                self.logoutClass() #this will make self.OnClass == False
+                continue
+                
+            comments = self.getAllComments()            
+            
+            sleep(10)
+        self.saveComments(comments)
+        print(comments)
     
 if __name__ == "__main__":
     secretary = ScheduleHandler("lalo")
-    secretary.shutdownAt("01:30")
-    # del secretary.student_bot
+    secretary.awaitEvent()
+    del secretary.student_bot
     exit(0)
