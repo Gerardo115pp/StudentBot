@@ -9,3 +9,4 @@ class MeetSelectors:
     CLOSE_CALL = "#ow3 > div.T4LgNb > div > div:nth-child(6) > div.crqnQb > div.rG0ybd.LCXT6 > div.q2u11 > div.s1GInc.zCbbgf > div"
     PEOPLE_COUNT = "#ow3 > div.T4LgNb > div > div:nth-child(6) > div.crqnQb > div.pHsCke > div.Jrb8ue > div > div.NzPR9b > div.uArJ5e.UQuaGc.kCyAyd.QU4Gid.foXzLb.IeuGXd > span > span > div > div > span.wnPUne.N0PJ8e"
     COMMENTS_CLASS = ".GDhqjd"
+    CHAT_BTN = "div.NzPR9b > div:nth-child(3) > span > span"

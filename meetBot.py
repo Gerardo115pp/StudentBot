@@ -12,6 +12,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from threading import Thread
 from BotSelectors import MeetSelectors
+from Recorder import Recorder
 import numpy as np
 import json
 import os
@@ -35,6 +36,7 @@ class ScheduleHandler:
         assert os.path.exists(SCHEDULE_JSON), f"schedule"
         self.schedule = self.__loadScheduleFile(schedule_file)
         self.student_bot = StudentBot(user)
+        self.__recorder = Recorder()
         self.__is_shutdown_set = False
         
     def __loadScheduleFile(self, schedule_file: str) -> dict:
@@ -121,6 +123,7 @@ class ScheduleHandler:
                 parsed_event = self.parseSchedule(scheduled_event) # tuple returned ((wd1,..,wdn),hh,mm)
                 if self.isEventStarted(current_time, parsed_event ,scheduled_event):
                     print(f"Event {scheduled_event} started!")
+                    self.__recorder.record(f'{self.schedule[scheduled_event]["class_name"]}-{current_time.strftime("%H-%M")}')
                     self.student_bot.joinMeet(self.schedule[scheduled_event]['class_name'])
                     print(f"staying in class {self.schedule[scheduled_event]['class_name']} for {self.schedule[scheduled_event]['stay']} minutes")
                     
@@ -130,10 +133,11 @@ class ScheduleHandler:
                     while self.schedule[scheduled_event]['stay'] != minutes_elapsed and self.student_bot.OnClass:
                         minutes_elapsed += 1
                         sleep(60)
-                        
+                    
                     print("getting out of class")
                     self.student_bot.logoutClass()
                     monitoring_thread.join(30)
+                    self.__recorder.stopRecording('.')
                     if not multiple:
                         return
                     
@@ -300,7 +304,9 @@ class StudentBot:
         if (self.getElementContent(MeetSelectors.PEOPLE_COUNT) == "1"):
             # closes the invite dialog in case we are the first to arrive to the call
             self.performActions(tuple([(BotActions.CLICK_HIDDEN, MeetSelectors.CLOSE_INVITE_DIALOG, 5)]),0.1)
-            
+        
+        self.performActions([(BotActions.CLICK_HIDDEN, MeetSelectors.CHAT_BTN, 3)])
+        
         self.__on_class = True if StudentBot.bot_regexs['meetcall'].match(self.driver.current_url) else False
         self.current_class = meet_class
         
