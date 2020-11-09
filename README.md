@@ -79,14 +79,12 @@ ya solo tenemos que configurar tus datos para el uso del bot
 ## **configurando user_data.json**
 ---
 
-si abres el archivo user_data.json veras algo como esto 
 
-```
 
 primero que nada configuremos tus datos para que el bot pueda usar tu cuenta.
 abre el archivo meetBot.py
 
-ve hasta abajo y borra todo lo que hay despues del `if if __name__ == "__main__":`
+ve hasta abajo y borra todo lo que hay apartir del ` if __name__ == "__main__":`
 
 y pon esto:
 
@@ -108,7 +106,7 @@ ahora te deberia aparecer un navegador de chrome, en este navegador inicia sesio
 ### ahora hay que configurar tus clases
 
 abre el user_data.json
-
+```
 {
     "meet": "https://meet.google.com",
     "lalo":{
@@ -141,6 +139,18 @@ teniendo esto ahora hay que configurar el schedule.json, que es el archivo que u
 ```
 
 la llave `"1,3:09:05"` indica una clase que ocurre todos los martes y jueves, comienza a las 9:05, valor 'stay' es la cantidad de minutos que el bot se mantendra en la clase, el valor class_name debe ser el mismo que pusisite en user_data.json
+
+1,3 representan martes y jueves
+
+| Day | #n |
+| ----------- | ----------- |
+| Lunes | 0 |
+| Martes | 1 |
+| Miercoles | 2 |
+| Jueves | 3 |
+| Viernes | 4 |
+| Sabado | 5 |
+| Domingo | 6 |
 
 ### *schedule.json*
 
