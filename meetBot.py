@@ -30,7 +30,7 @@ class BotActions(Enum):
 
 class ScheduleHandler:
     
-    time_matrix = np.array([3600, 60, 1])
+    time_matrix = np.array([86400,3600, 60, 1])
     
     def __init__(self, user,  schedule_file: str=SCHEDULE_JSON):
         assert os.path.exists(SCHEDULE_JSON), f"schedule"
@@ -94,6 +94,10 @@ class ScheduleHandler:
         shutdown_time = self.parse24Hstring(shutdown_time)
         seconds = int((shutdown_time - datetime.now()).total_seconds())
         self.__setShutdown(seconds)
+
+    def shutdownIn(self, days=0, hours=0, minutes=0, seconds=0):
+        shutdown_time  = np.array([days, hours, minutes, seconds])
+        return self.__setShutdown(np.dot(shutdown_time, ScheduleHandler.time_matrix))
     
     def __abortShutdown(self):
         self.__is_shutdown_set = False
@@ -142,7 +146,6 @@ class ScheduleHandler:
                         return
                     
             sleep(60)
-                
                 
 
 class StudentBotException(Exception):
@@ -370,6 +373,5 @@ class StudentBot:
     
 if __name__ == "__main__":
     secretary = ScheduleHandler("lalo")
-    secretary.awaitEvent()
-    del secretary.student_bot
+    secretary.shutdownIn(hours=1)
     exit(0)
