@@ -373,5 +373,7 @@ class StudentBot:
     
 if __name__ == "__main__":
     secretary = ScheduleHandler("lalo")
-    secretary.shutdownIn(hours=1)
+    secretary.awaitEvent()
+    # secretary.shutdownAt("hh:mm") decomenta si quieres que el bot apague tu computadora en un perdiodo de tiempo definido por hh:mm
+    del secretary.student_bot
     exit(0)
