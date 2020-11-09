@@ -2,7 +2,6 @@ user_data.json
 schedule.json
 __pycache__/
 lalo/
-Release/
 *.exe
 *.log
 *.mp4
